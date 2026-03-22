@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Endee Student Notes RAG</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --paper: #fffdf7;
+      --ink: #18212f;
+      --muted: #516178;
+      --accent: #c65102;
+      --accent-soft: #ffe7d3;
+      --line: #dfd6c6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, #ffe8d8 0%, transparent 45%),
+        radial-gradient(circle at 85% 0%, #e8f2ff 0%, transparent 40%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      width: min(1040px, 94vw);
+      margin: 32px auto 56px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #1f2a3c, #334866);
+      color: #fefefe;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 10px 24px rgba(18, 31, 51, 0.25);
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 2.7vw, 2.2rem); }
+    p { margin: 0; line-height: 1.5; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 4px 12px rgba(24, 33, 47, 0.06);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 1.1rem;
+      letter-spacing: 0.02em;
+    }
+
+    label {
+      display: block;
+      font-size: 0.88rem;
+      color: var(--muted);
+      margin: 10px 0 6px;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid #c7bca8;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--ink);
+      background: #fffcf4;
+    }
+
+    textarea { min-height: 132px; resize: vertical; }
+
+    button {
+      margin-top: 12px;
+      border: none;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:hover { filter: brightness(1.05); }
+
+    .result {
+      margin-top: 12px;
+      border: 1px dashed #c7bca8;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fffaf0;
+      white-space: pre-wrap;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .hit {
+      border-top: 1px solid #e2d9c9;
+      padding-top: 10px;
+      margin-top: 10px;
+    }
+
+    .pill {
+      display: inline-block;
+      background: var(--accent-soft);
+      color: #663006;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.8rem;
+      margin-right: 6px;
+    }
+
+    @media (max-width: 880px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>Student Notes Semantic Search + RAG</h1>
+      <p>FastAPI backend, Endee vector retrieval, Groq inference, and a pure HTML frontend.</p>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Ingest Notes (Text)</h2>
+        <label for="sourceName">Source Name</label>
+        <input id="sourceName" value="class_notes" />
+
+        <label for="notesText">Notes Content</label>
+        <textarea id="notesText" placeholder="Paste your notes here..."></textarea>
+
+        <button id="ingestBtn">Index Notes</button>
+        <div id="ingestResult" class="result"></div>
+      </article>
+
+      <article class="card">
+        <h2>Ingest Notes (File)</h2>
+        <label for="fileInput">Upload .txt file</label>
+        <input id="fileInput" type="file" accept=".txt" />
+
+        <button id="fileBtn">Upload + Index File</button>
+        <div id="fileResult" class="result"></div>
+      </article>
+
+      <article class="card">
+        <h2>Semantic Search</h2>
+        <label for="searchQuery">Question</label>
+        <textarea id="searchQuery" placeholder="What is normalization in machine learning?"></textarea>
+
+        <button id="searchBtn">Search</button>
+        <div id="searchResult" class="result"></div>
+      </article>
+
+      <article class="card">
+        <h2>RAG Answer (Groq)</h2>
+        <label for="ragQuery">Question</label>
+        <textarea id="ragQuery" placeholder="Summarize gradient descent in simple steps."></textarea>
+
+        <button id="ragBtn">Generate Answer</button>
+        <div id="ragResult" class="result"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    async function postJson(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || JSON.stringify(data));
+      }
+      return data;
+    }
+
+    function renderHits(hits) {
+      if (!hits || !hits.length) return "No results.";
+      return hits.map((hit, i) => {
+        return [
+          `Result ${i + 1}`,
+          `ID: ${hit.id}`,
+          `Similarity: ${Number(hit.similarity).toFixed(4)}`,
+          `Text: ${hit.text || ""}`,
+          ""
+        ].join("\n");
+      }).join("\n");
+    }
+
+    document.getElementById("ingestBtn").addEventListener("click", async () => {
+      const sourceName = document.getElementById("sourceName").value.trim() || "manual_input";
+      const content = document.getElementById("notesText").value;
+      const box = document.getElementById("ingestResult");
+      box.textContent = "Indexing...";
+      try {
+        const data = await postJson("/api/ingest/text", { source_name: sourceName, content });
+        box.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        box.textContent = `Error: ${err.message}`;
+      }
+    });
+
+    document.getElementById("fileBtn").addEventListener("click", async () => {
+      const fileInput = document.getElementById("fileInput");
+      const box = document.getElementById("fileResult");
+      if (!fileInput.files.length) {
+        box.textContent = "Please choose a .txt file first.";
+        return;
+      }
+      box.textContent = "Uploading and indexing...";
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      try {
+        const response = await fetch("/api/ingest/file", { method: "POST", body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || JSON.stringify(data));
+        box.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        box.textContent = `Error: ${err.message}`;
+      }
+    });
+
+    document.getElementById("searchBtn").addEventListener("click", async () => {
+      const query = document.getElementById("searchQuery").value;
+      const box = document.getElementById("searchResult");
+      box.textContent = "Searching...";
+      try {
+        const data = await postJson("/api/search", { query, k: 5 });
+        box.textContent = renderHits(data.hits);
+      } catch (err) {
+        box.textContent = `Error: ${err.message}`;
+      }
+    });
+
+    document.getElementById("ragBtn").addEventListener("click", async () => {
+      const query = document.getElementById("ragQuery").value;
+      const box = document.getElementById("ragResult");
+      box.textContent = "Generating answer...";
+      try {
+        const data = await postJson("/api/rag", { query, k: 5 });
+        const citations = (data.citations || []).map(c => `- ${c.id} (sim=${Number(c.similarity).toFixed(4)})`).join("\n");
+        box.textContent = `Answer:\n${data.answer}\n\nCitations:\n${citations || "None"}`;
+      } catch (err) {
+        box.textContent = `Error: ${err.message}`;
+      }
+    });
+  </script>
+</body>
+</html>
