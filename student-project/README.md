@@ -8,43 +8,21 @@ This project implements a practical AI workflow for student notes using:
 - Groq API for grounded answer generation
 - Plain HTML/CSS/JS for the frontend (no Streamlit)
 
-## Problem Statement
+## What It Does
 
-Students spend a lot of time searching long class notes. Keyword search fails when wording changes. This project solves that by indexing notes as embeddings in Endee, enabling semantic retrieval and retrieval-augmented generation (RAG).
+- Ingest notes (text or `.txt` file)
+- Convert chunks into embeddings and store them in Endee
+- Run semantic search on stored notes
+- Generate RAG answers with Groq using retrieved context
 
-## Key Features
+## Endee Usage
 
-- Text/file ingestion and chunking
-- Embedding generation and vector insertion into Endee
-- Semantic search endpoint
-- RAG endpoint with citations
-- Browser UI built only with HTML/CSS/JS
+The backend talks to Endee HTTP APIs:
 
-## System Design
-
-1. Ingestion:
-   - Notes are split into overlapping chunks
-   - Each chunk is embedded with `all-MiniLM-L6-v2`
-   - Vectors + chunk text metadata are inserted into Endee
-
-2. Retrieval:
-   - Query text is embedded
-   - Top-k nearest chunks are fetched from Endee
-
-3. Generation:
-   - Retrieved chunks are passed as context to Groq LLM
-   - Final answer is generated with source references
-
-## How Endee Is Used
-
-The app calls Endee HTTP APIs directly:
-
-- `POST /api/v1/index/create` to create index
-- `POST /api/v1/index/{index_name}/vector/insert` to insert chunks
-- `POST /api/v1/index/{index_name}/search` to retrieve nearest chunks
-- `GET /api/v1/index/list` and `GET /api/v1/health` for setup/health
-
-Search responses are decoded from MessagePack returned by Endee.
+- `POST /api/v1/index/create`
+- `POST /api/v1/index/{index_name}/vector/insert`
+- `POST /api/v1/index/{index_name}/search`
+- `GET /api/v1/health`
 
 ## Project Structure
 
@@ -61,13 +39,13 @@ student-project/
       text_utils.py
     static/
       index.html
-  .env.example
+  .env.template
   requirements.txt
   run.py
   README.md
 ```
 
-## Setup and Execution
+## Run Project
 
 ### 1. Start Endee server
 
@@ -81,13 +59,12 @@ $env:NDD_DATA_DIR="./data"
 
 Default Endee URL is `http://127.0.0.1:8080`.
 
-### 2. Create Python environment
+### 2. Create Python environment (repo root)
 
 ```powershell
-cd student-project
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r student-project/requirements.txt
 ```
 
 Optional (better embedding quality, heavier install):
@@ -99,10 +76,10 @@ pip install sentence-transformers==3.4.1
 ### 3. Configure environment variables
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item student-project/.env.template student-project/.env
 ```
 
-Edit `.env` and set:
+Edit `student-project/.env` and set:
 
 - `GROQ_API_KEY=...`
 - optionally `ENDEE_AUTH_TOKEN` if Endee auth is enabled
@@ -112,54 +89,24 @@ Note: if `sentence-transformers` is not installed, the app automatically uses a 
 ### 4. Run FastAPI server
 
 ```powershell
-python run.py
+.\.venv\Scripts\python.exe student-project/run.py
 ```
 
 App URL: `http://127.0.0.1:8000`
 
-## API Endpoints
+## Quick Test
 
-- `GET /api/health`
-- `POST /api/ingest/text`
-- `POST /api/ingest/file` (txt file)
-- `POST /api/search`
-- `POST /api/rag`
+1. Open `http://127.0.0.1:8000`
+2. In "Ingest Notes (Text)", paste notes and click "Index Notes"
+3. In "Semantic Search", ask a question from those notes
+4. In "RAG Answer", ask the same question and verify citations are shown
 
-## Example Requests
+## API Test (PowerShell)
 
-### Ingest text
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/ingest/text" -ContentType "application/json" -Body '{"source_name":"demo","content":"Gradient descent updates weights iteratively."}'
 
-```bash
-curl -X POST http://127.0.0.1:8000/api/ingest/text \
-  -H "Content-Type: application/json" \
-  -d '{"source_name":"ml_unit_1","content":"Gradient descent updates model weights..."}'
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/search" -ContentType "application/json" -Body '{"query":"What is gradient descent?","k":3}'
+
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/rag" -ContentType "application/json" -Body '{"query":"Explain gradient descent in simple words","k":3}'
 ```
-
-### Semantic search
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"What is gradient descent?","k":5}'
-```
-
-### RAG answer
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/rag \
-  -H "Content-Type: application/json" \
-  -d '{"query":"Summarize gradient descent in 3 points","k":5}'
-```
-
-## Evaluation Notes
-
-- Core vector search is performed in Endee
-- Retrieval output is shown in semantic search
-- RAG answer cites retrieved source chunks
-- The solution is practical, reproducible, and hosted inside the candidate's Endee fork
-
-## Limitations and Future Work
-
-- Current file ingestion is optimized for `.txt` (PDF parsing can be added)
-- No automated relevance benchmark yet
-- Can be extended with per-user notes, filters, and hybrid sparse+dense search

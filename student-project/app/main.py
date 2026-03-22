@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -27,6 +27,11 @@ rag_service = RAGService()
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(static_dir / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    return Response(status_code=204)
 
 
 @app.get("/api/health")

@@ -30,3 +30,13 @@ frontend/*
 
 # DS Store
 .DS_Store
+
+# Student project local secrets
+student-project/.env
+student-project/.env.*
+!student-project/.env.template
+
+# Python artifacts
+.venv/
+**/__pycache__/
+*.pyc
