@@ -90,6 +90,12 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Optional (better embedding quality, heavier install):
+
+```powershell
+pip install sentence-transformers==3.4.1
+```
+
 ### 3. Configure environment variables
 
 ```powershell
@@ -100,6 +106,8 @@ Edit `.env` and set:
 
 - `GROQ_API_KEY=...`
 - optionally `ENDEE_AUTH_TOKEN` if Endee auth is enabled
+
+Note: if `sentence-transformers` is not installed, the app automatically uses a lightweight local fallback embedding so the demo still runs.
 
 ### 4. Run FastAPI server
 
