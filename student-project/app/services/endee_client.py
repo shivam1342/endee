@@ -52,7 +52,16 @@ class EndeeClient:
             for key in ("indexes", "index_list", "data", "result"):
                 value = data.get(key)
                 if isinstance(value, list):
-                    return [str(item) for item in value]
+                    names: list[str] = []
+                    for item in value:
+                        if isinstance(item, str):
+                            names.append(item)
+                        elif isinstance(item, dict):
+                            name = item.get("name") or item.get("index_name")
+                            if isinstance(name, str):
+                                names.append(name)
+                    if names:
+                        return names
         return []
 
     async def ensure_index(self, dim: int) -> None:
@@ -72,7 +81,13 @@ class EndeeClient:
             "sparse_model": "None",
         }
 
-        await self._post("/api/v1/index/create", payload)
+        try:
+            await self._post("/api/v1/index/create", payload)
+        except httpx.HTTPStatusError as exc:
+            # Endee returns 409 when index already exists.
+            if exc.response.status_code == 409:
+                return
+            raise
 
     async def insert_vectors(self, vectors: list[dict[str, Any]]) -> None:
         if not vectors:
@@ -109,23 +124,42 @@ class EndeeClient:
 
         unpacked = msgpack.unpackb(response.content, raw=False, strict_map_key=False)
 
-        records: list[dict[str, Any]] = []
-        if isinstance(unpacked, list):
-            records = [item for item in unpacked if isinstance(item, dict)]
-        elif isinstance(unpacked, dict):
-            if isinstance(unpacked.get("results"), list):
-                records = [item for item in unpacked["results"] if isinstance(item, dict)]
-            elif isinstance(unpacked.get("dense"), list):
-                records = [item for item in unpacked["dense"] if isinstance(item, dict)]
-
         hits: list[SearchHit] = []
-        for rec in records:
-            hit = SearchHit(
-                id=str(rec.get("id", "")),
-                similarity=float(rec.get("similarity", 0.0)),
-                text=self._decode_meta(rec.get("meta", b"")),
-                metadata=self._parse_filter(rec.get("filter", "")),
-            )
-            hits.append(hit)
+
+        # Endee commonly returns a list-of-lists in MessagePack format:
+        # [similarity, id, meta, filter, norm, vector]
+        if isinstance(unpacked, list):
+            for item in unpacked:
+                if isinstance(item, dict):
+                    hits.append(
+                        SearchHit(
+                            id=str(item.get("id", "")),
+                            similarity=float(item.get("similarity", 0.0)),
+                            text=self._decode_meta(item.get("meta", b"")),
+                            metadata=self._parse_filter(item.get("filter", "")),
+                        )
+                    )
+                elif isinstance(item, list) and len(item) >= 4:
+                    hits.append(
+                        SearchHit(
+                            id=str(item[1]),
+                            similarity=float(item[0]),
+                            text=self._decode_meta(item[2]),
+                            metadata=self._parse_filter(item[3]),
+                        )
+                    )
+        elif isinstance(unpacked, dict):
+            bucket = unpacked.get("results") or unpacked.get("dense")
+            if isinstance(bucket, list):
+                for rec in bucket:
+                    if isinstance(rec, dict):
+                        hits.append(
+                            SearchHit(
+                                id=str(rec.get("id", "")),
+                                similarity=float(rec.get("similarity", 0.0)),
+                                text=self._decode_meta(rec.get("meta", b"")),
+                                metadata=self._parse_filter(rec.get("filter", "")),
+                            )
+                        )
 
         return hits
