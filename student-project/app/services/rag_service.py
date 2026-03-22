@@ -1,4 +1,5 @@
 from groq import Groq
+from groq import APIError, AuthenticationError
 
 from app.config import settings
 from app.models import SearchHit
@@ -34,17 +35,27 @@ class RAGService:
             f"Context:\n{context_block}"
         )
 
-        completion = self._client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You provide grounded answers using only retrieved context.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
-            max_tokens=700,
-        )
+        try:
+            completion = self._client.chat.completions.create(
+                model=settings.groq_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You provide grounded answers using only retrieved context.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=700,
+            )
+        except AuthenticationError:
+            return (
+                "Groq authentication failed (invalid API key). "
+                "Update GROQ_API_KEY in student-project/.env and restart backend."
+            )
+        except APIError as exc:
+            return f"Groq API error: {exc}"
+        except Exception as exc:
+            return f"RAG temporarily unavailable: {exc}"
 
         return completion.choices[0].message.content or "No response generated."
