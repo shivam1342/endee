@@ -1,65 +1,69 @@
-# Student Notes Semantic Search + RAG with Endee and Groq
+# NeuralDocs-Endee
 
-This project implements a practical AI workflow for student notes using:
+Lightweight Retrieval-Augmented Generation (RAG) system using Endee vector database and Groq LLM for semantic document search.
 
-- Endee as the vector database
-- FastAPI as the backend API
-- Sentence Transformers for text embeddings
-- Groq API for grounded answer generation
-- Plain HTML/CSS/JS for the frontend (no Streamlit)
+## Overview
+Semantic document retrieval system using Endee vector database.
 
-## What It Does
+## Problem Statement
+Traditional keyword-based search fails to capture semantic intent across large unstructured documents.
 
-- Ingest notes (text or `.txt` file)
-- Convert chunks into embeddings and store them in Endee
-- Run semantic search on stored notes
-- Generate RAG answers with Groq using retrieved context
+NeuralDocs-Endee implements embedding-based semantic retrieval using a vector database pipeline and Retrieval-Augmented Generation (RAG) to enable context-aware question answering over documents.
+
+## Features
+- Dense embedding-based semantic document search
+- Containerized Endee vector database deployment
+- Top-k similarity retrieval pipeline
+- Groq LLM integration for RAG-based answering
+- REST API ingestion and query interface
+- Source citation tracking in generated responses
+
+## Architecture
+Document
+  -> Chunking (fixed-size overlapping character segments: 550 chars, 120 overlap)
+  -> Embedding generation (MiniLM 384-dim when available)
+  -> Vector indexing (Endee)
+  -> Top-k similarity retrieval
+  -> Prompt augmentation
+  -> Groq LLM answer generation
+
+User Query
+  -> Query Embedding
+  -> Top-k Similarity Retrieval (Endee)
+  -> Context Assembly
+  -> Prompt Augmentation
+  -> Groq LLM Response Generation
 
 ## Endee Usage
+Endee is used as the vector storage and similarity search engine.
 
-The backend talks to Endee HTTP APIs:
+The backend uses Endee APIs for:
+- index creation
+- vector insertion
+- top-k similarity search
 
-- `POST /api/v1/index/create`
-- `POST /api/v1/index/{index_name}/vector/insert`
-- `POST /api/v1/index/{index_name}/search`
-- `GET /api/v1/health`
+## Embeddings
+Embeddings are generated using `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions) when installed.
 
-## Project Structure
+If `sentence-transformers` is unavailable, the app uses a lightweight local fallback embedding method so the system still runs.
 
-```text
-student-project/
-  app/
-    main.py
-    config.py
-    models.py
-    services/
-      embedding_service.py
-      endee_client.py
-      rag_service.py
-      text_utils.py
-    static/
-      index.html
-  .env.template
-  requirements.txt
-  run.py
-  README.md
-```
+## Why Endee?
+Endee provides a lightweight containerized vector database with API-first indexing and retrieval support, making it suitable for portable semantic search systems and rapid experimentation with RAG pipelines.
 
-## Run Project
+## Retrieval Strategy
+Top-k similarity search is performed over indexed embeddings stored in Endee (default space type: cosine). Retrieved chunks are injected into prompt context before LLM response generation.
 
-### 1. Start Endee server
-
-From repository root:
+## Setup
+1. Clone your fork and open repository root.
+2. Start Docker Desktop.
+3. Run Endee container:
 
 ```powershell
-mkdir data
-$env:NDD_DATA_DIR="./data"
-./build/ndd
+docker rm -f endee-server
+docker run -d --ulimit nofile=100000:100000 -p 18080:8080 -v "${PWD}/endee-data:/data" --name endee-server --restart unless-stopped endeeio/endee-server:latest
 ```
 
-Default Endee URL is `http://127.0.0.1:8080`.
-
-### 2. Create Python environment (repo root)
+4. Create and activate Python environment:
 
 ```powershell
 python -m venv .venv
@@ -67,46 +71,75 @@ python -m venv .venv
 pip install -r student-project/requirements.txt
 ```
 
-Optional (better embedding quality, heavier install):
-
-```powershell
-pip install sentence-transformers==3.4.1
-```
-
-### 3. Configure environment variables
+5. Create local env file:
 
 ```powershell
 Copy-Item student-project/.env.template student-project/.env
 ```
 
-Edit `student-project/.env` and set:
+6. Edit `student-project/.env`:
+- `ENDEE_BASE_URL=http://127.0.0.1:18080`
+- `GROQ_API_KEY=<your_valid_key>`
 
-- `GROQ_API_KEY=...`
-- optionally `ENDEE_AUTH_TOKEN` if Endee auth is enabled
-
-Note: if `sentence-transformers` is not installed, the app automatically uses a lightweight local fallback embedding so the demo still runs.
-
-### 4. Run FastAPI server
+## Run
+From repository root:
 
 ```powershell
 .\.venv\Scripts\python.exe student-project/run.py
 ```
 
-App URL: `http://127.0.0.1:8000`
+Open:
+`http://127.0.0.1:8000`
 
-## Quick Test
+## Example Output
+Ingest response:
 
-1. Open `http://127.0.0.1:8000`
-2. In "Ingest Notes (Text)", paste notes and click "Index Notes"
-3. In "Semantic Search", ask a question from those notes
-4. In "RAG Answer", ask the same question and verify citations are shown
-
-## API Test (PowerShell)
-
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/ingest/text" -ContentType "application/json" -Body '{"source_name":"demo","content":"Gradient descent updates weights iteratively."}'
-
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/search" -ContentType "application/json" -Body '{"query":"What is gradient descent?","k":3}'
-
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/rag" -ContentType "application/json" -Body '{"query":"Explain gradient descent in simple words","k":3}'
+```json
+{
+  "status": "indexed",
+  "source": "smoke",
+  "chunks_indexed": 1,
+  "embedding_dimension": 384
+}
 ```
+
+Search response:
+
+```json
+{
+  "query": "What is gradient descent?",
+  "hits": [
+    {
+      "id": "smoke-chunk-1",
+      "similarity": 0.1767,
+      "text": "Gradient descent updates model parameters to minimize loss.",
+      "metadata": {"source": "smoke", "chunk": 1}
+    }
+  ]
+}
+```
+
+RAG response:
+
+```json
+{
+  "query": "Explain gradient descent in simple words",
+  "answer": "Gradient descent updates model parameters to minimize loss...",
+  "citations": [
+    {"id": "smoke-chunk-1"}
+  ]
+}
+```
+
+## Limitations
+- Uses fixed-size chunking instead of semantic chunk boundaries
+- No reranking stage implemented
+- No hybrid keyword + vector retrieval pipeline
+
+## Future Improvements
+- Add cross-encoder reranking stage
+- Support multi-document ingestion workflows
+- Add hybrid BM25 + dense retrieval
+- Implement streaming response support
+
+
